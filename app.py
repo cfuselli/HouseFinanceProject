@@ -10,18 +10,26 @@ from main import (
     RentAssumptions,
     GlobalAssumptions,
     Simulator,
+    Mortgage,
 )
 
 st.set_page_config(page_title="Rent vs Buy Dashboard", layout="wide")
 st.title("🏠 Rent vs Buy — Interactive Dashboard")
 
-st.markdown(
+intro = st.markdown(
     """
-    Tune the inputs on the left. The app uses your **`main.py`** engine under the hood.
-    - The charts and summary update live.
-    - The model includes: mortgage amortization, VvE, maintenance (as % of value), property tax, transaction costs, appreciation, rent growth, and opportunity cost of capital.
+    **What this is:** an interactive calculator to compare renting vs buying the same home.
+
+    **How it works:** we simulate monthly cashflows for both paths (mortgage payments, VvE, maintenance, taxes; versus rent and investing the saved upfront cash), then compute **NPV** and **IRR**.
+
+    **NPV (Net Present Value):** all future cashflows are discounted back to today using your **discount rate**, so euros at different times are comparable. Higher NPV = financially better.
+
+    Use the sidebar to change assumptions; the summary and plots update live.
     """
 )
+
+# Placeholder for a one-line summary that we fill after running the sim
+summary_placeholder = st.empty()
 
 # -----------------------------
 # SIDEBAR INPUTS
@@ -99,6 +107,11 @@ col2.metric("NPV (Rent)", fmt_money(rent_res.npv))
 delta = buy_res.npv - rent_res.npv
 col3.metric("NPV Δ (Buy − Rent)", fmt_money(delta), delta=None)
 col4.metric("Equity at Sale (Buy)", fmt_money(buy_res.net_equity_at_sale))
+
+verdict = "BUY" if delta > 0 else ("RENT" if delta < 0 else "TIE")
+summary_placeholder.info(
+    f"**Summary:** At your inputs, NPV(Buy) = {fmt_money(buy_res.npv)}, NPV(Rent) = {fmt_money(rent_res.npv)} → **{verdict}** by {fmt_money(abs(delta))} (NPV)."
+)
 
 st.divider()
 
@@ -208,3 +221,41 @@ st.pyplot(fig3, use_container_width=False)
 st.caption("Heatmap shows how the relative advantage (Buy − Rent) changes with different down payment percentages and horizons. **Red = Buy better**, **Blue = Rent better**. The black line marks the break‑even (NPV Δ = 0).")
 
 st.caption("Tip: Use the sidebar to change appreciation, rent growth, fees, and rates; then scan the sweep plots to see where the verdict flips.")
+
+# 4) Mortgage amortization breakdown (interest vs principal)
+st.subheader("Mortgage payment split over time (interest vs principal)")
+
+# Add a slider to select number of months to display (up to horizon)
+max_months = global_.horizon_years * 12
+months_slider = st.slider("Months to display", 12, max_months, max_months, step=12)
+
+m = Mortgage(buy.mortgage_principal(), mortgage_rate, term_years)
+pmt = m.payment()
+r = mortgage_rate / 12.0
+balance = buy.mortgage_principal()
+ints = []
+prins = []
+for _ in range(months_slider):
+    interest = balance * r
+    principal = max(0.0, pmt - interest)
+    ints.append(interest)
+    prins.append(principal)
+    balance = max(0.0, balance - principal)
+
+x_idx = np.arange(1, months_slider + 1)
+figA, axA = plt.subplots(figsize=(6, 4))
+axA.stackplot(x_idx, ints, prins, labels=["Interest", "Principal"])
+axA.set_xlabel("Month")
+axA.set_ylabel("Monthly payment split (€)")
+axA.legend(
+    # Put legend outside the plot area
+    loc="upper left",
+    bbox_to_anchor=(.5, 1.15),
+    ncol=2, 
+)
+st.pyplot(figA, use_container_width=False)
+st.caption("Shows how each monthly payment is divided. Early payments are interest-heavy; over time, the principal share grows.")
+
+
+st.markdown("<hr />", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center; font-size: 0.9em;'>Built by Carlo — self-hosted on Raspberry Pi 🥔🚀</div>", unsafe_allow_html=True)
