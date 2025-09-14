@@ -38,28 +38,28 @@ with st.sidebar:
     st.header("Inputs")
 
     st.subheader("Global")
-    horizon_years = st.slider("Horizon (years)", 1, 30, 7)
-    discount_rate = st.number_input("Discount rate (annual)", value=0.03, min_value=0.0, max_value=0.25, step=0.005, format="%.3f")
+    horizon_years = st.slider("Horizon (years)", 1, 30, 7, help="How long you expect to keep the house / stay in the rental before selling or moving.")
+    discount_rate = st.number_input("Discount rate (annual)", value=0.03, min_value=0.0, max_value=0.25, step=0.005, format="%.3f", help="Your opportunity cost of capital (required return). Used to discount future cashflows into today's euros. Typical 2–5%.")
 
     st.subheader("Buy")
-    price = st.number_input("House price", value=500_000, min_value=50_000, step=10_000)
-    down_payment_pct = st.slider("Down payment (%)", 0, 60, 20) / 100.0
-    mortgage_rate = st.number_input("Mortgage rate (annual)", value=0.0361, min_value=0.0, max_value=1.0, step=0.001, format="%.4f")
-    term_years = st.slider("Mortgage term (years)", 5, 40, 30)
-    vve_monthly = st.number_input("VvE (HOA) per month", value=200, min_value=0, step=25)
-    maint_pct = st.number_input("Maintenance (%% of value / year)", value=0.005, min_value=0.0, max_value=0.05, step=0.001, format="%.3f")
-    property_tax_annual = st.number_input("Property tax (annual)", value=600, min_value=0, step=50)
+    price = st.number_input("House price", value=500_000, min_value=50_000, step=10_000, help="Purchase price of the property.")
+    down_payment_pct = st.slider("Down payment (%)", 0, 60, 20, help="Percent of the price you pay upfront; the rest is financed.") / 100.0
+    mortgage_rate = st.number_input("Mortgage rate (annual)", value=0.0361, min_value=0.0, max_value=1.0, step=0.001, format="%.4f", help="Nominal annual interest rate of the mortgage (e.g., 0.0361 = 3.61%).")
+    term_years = st.slider("Mortgage term (years)", 5, 40, 30, help="Amortization length. Payment is computed for this full term.")
+    vve_monthly = st.number_input("VvE (HOA) per month", value=200, min_value=0, step=25, help="Monthly owners' association fee (VvE/HOA). Often includes building insurance.")
+    maint_pct = st.number_input("Maintenance (%% of value / year)", value=0.005, min_value=0.0, max_value=0.05, step=0.001, format="%.3f", help="Annual upkeep as a percent of current property value. 0.5% is common for flats in good condition.")
+    property_tax_annual = st.number_input("Property tax (annual)", value=600, min_value=0, step=50, help="Municipal tax (e.g., OZB) per year. Set to 0 if you don't want to include it.")
 
-    transfer_tax_pct = st.number_input("Transfer tax (%)", value=0.02, min_value=0.0, max_value=0.10, step=0.005, format="%.3f")
-    buyer_closing_costs_pct = st.number_input("Buyer closing costs (%)", value=0.02, min_value=0.0, max_value=0.08, step=0.005, format="%.3f")
-    seller_costs_pct = st.number_input("Seller costs (%)", value=0.015, min_value=0.0, max_value=0.05, step=0.005, format="%.3f")
+    transfer_tax_pct = st.number_input("Transfer tax (%)", value=0.02, min_value=0.0, max_value=0.10, step=0.005, format="%.3f", help="One‑off tax on purchase (e.g., NL ~2% for owner‑occupiers; check your eligibility).")
+    buyer_closing_costs_pct = st.number_input("Buyer closing costs (%)", value=0.02, min_value=0.0, max_value=0.08, step=0.005, format="%.3f", help="Notary, registration, valuation, bank fees, etc., as a % of price.")
+    seller_costs_pct = st.number_input("Seller costs (%)", value=0.015, min_value=0.0, max_value=0.05, step=0.005, format="%.3f", help="Costs when selling (agent fees, notary), as a % of final sale price.")
 
-    appreciation = st.number_input("Annual appreciation", value=0.02, min_value=-0.1, max_value=0.20, step=0.005, format="%.3f")
+    appreciation = st.number_input("Annual appreciation", value=0.02, min_value=-0.1, max_value=0.20, step=0.005, format="%.3f", help="Expected average annual change in the home's market value.")
 
     st.subheader("Rent")
-    monthly_rent = st.number_input("Monthly rent (start)", value=2000, min_value=0, step=50)
-    rent_growth = st.number_input("Annual rent increase", value=0.02, min_value=0.0, max_value=0.20, step=0.005, format="%.3f")
-    invest_return = st.number_input("Annual investment return (opportunity)", value=0.03, min_value=0.0, max_value=0.25, step=0.005, format="%.3f")
+    monthly_rent = st.number_input("Monthly rent (start)", value=2000, min_value=0, step=50, help="Your initial monthly rent at month 1.")
+    rent_growth = st.number_input("Annual rent increase", value=0.05, min_value=0.0, max_value=0.20, step=0.005, format="%.3f", help="Expected average annual rent growth.")
+    invest_return = st.number_input("Annual investment return (opportunity)", value=0.03, min_value=0.0, max_value=0.25, step=0.005, format="%.3f", help="Return you expect on money not spent buying (e.g., index fund). Used in the RENT path.")
 
 # Assemble assumption objects
 buy = BuyAssumptions(
@@ -98,29 +98,68 @@ rent_res = sim.simulate_rent()
 fmt_money = lambda x: f"€{x:,.0f}".replace(",", "_").replace("_", ",")
 fmt_pct = lambda x: f"{x*100:.2f}%"
 
+# -----------------------------
+# QUICK INPUTS SUMMARY
+# -----------------------------
+# Derived numbers
+_dp_amt = price * down_payment_pct
+_mortgage_principal = buy.mortgage_principal()
+_m = Mortgage(_mortgage_principal, mortgage_rate, term_years)
+_pmt = _m.payment()
+_upfront = buy.upfront_cash_needed()
+
+st.subheader("Your inputs (quick glance)")
+colL, colR = st.columns(2)
+with colL:
+    st.markdown(
+        f"""
+        **Horizon:** {horizon_years} years  
+        **Discount rate:** {fmt_pct(discount_rate)}  
+        **Home price:** {fmt_money(price)}  
+        **Down payment:** {fmt_money(_dp_amt)} ({fmt_pct(down_payment_pct)})  
+        **Mortgage:** {fmt_pct(mortgage_rate)} × {term_years}y → **{fmt_money(_pmt)}/mo**  
+        **Upfront (down + taxes/fees):** {fmt_money(_upfront)}
+        """
+    )
+with colR:
+    st.markdown(
+        f"""
+        **Rent (start):** {fmt_money(monthly_rent)}/mo  
+        **Rent increase:** {fmt_pct(rent_growth)}  
+        **Investment return:** {fmt_pct(invest_return)}  
+        **VvE (HOA):** {fmt_money(vve_monthly)}/mo  
+        **Maintenance:** {fmt_pct(maint_pct)}/yr of value  
+        **Property tax:** {fmt_money(property_tax_annual)}/yr  
+        **Transfer tax:** {fmt_pct(transfer_tax_pct)}  
+        **Buyer closing:** {fmt_pct(buyer_closing_costs_pct)}  
+        **Seller costs:** {fmt_pct(seller_costs_pct)}  
+        **Appreciation:** {fmt_pct(appreciation)}
+        """
+    )
+
 # =============================
 # TOP SUMMARY CARDS
 # =============================
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("NPV (Buy)", fmt_money(buy_res.npv))
-col2.metric("NPV (Rent)", fmt_money(rent_res.npv))
+# Compute delta early and show the one-line summary BEFORE the metrics
 delta = buy_res.npv - rent_res.npv
-col3.metric("NPV Δ (Buy − Rent)", fmt_money(delta), delta=None)
-col4.metric("Equity at Sale (Buy)", fmt_money(buy_res.net_equity_at_sale))
-
 verdict = "BUY" if delta > 0 else ("RENT" if delta < 0 else "TIE")
 summary_placeholder.info(
     f"**Summary:** At your inputs, NPV(Buy) = {fmt_money(buy_res.npv)}, "
-    f"NPV(Rent) = {fmt_money(rent_res.npv)}\n\n"
+    f"NPV(Rent) = {fmt_money(rent_res.npv)}.\n\n"
     f"It is more convenient to **{verdict}** by {fmt_money(abs(delta))} (NPV)."
 )
+
+col1, col2, col3 = st.columns(3)
+col1.metric("NPV (Buy)", fmt_money(buy_res.npv))
+col2.metric("NPV (Rent)", fmt_money(rent_res.npv))
+col3.metric("NPV Δ (Buy − Rent)", fmt_money(delta), delta=None)
 
 st.divider()
 
 # =============================
 # TEXT SUMMARY
 # =============================
-with st.expander("Detailed summary (same as CLI report)", expanded=True):
+with st.expander("Detailed summary (same as CLI report)", expanded=False):
     st.code(sim.render_report())
 
 st.divider()
@@ -130,6 +169,7 @@ st.divider()
 # =============================
 
 # 1) Cumulative cashflows over time (monthly)
+st.subheader("Cumulative cashflows over time (monthly)")
 months = global_.horizon_years * 12
 
 buy_cum = np.cumsum(buy_res.cashflows)
