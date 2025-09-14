@@ -1,0 +1,210 @@
+import math
+import numpy as np
+import streamlit as st
+import matplotlib.pyplot as plt
+
+plt.style.use("seaborn-v0_8-darkgrid")
+
+from main import (
+    BuyAssumptions,
+    RentAssumptions,
+    GlobalAssumptions,
+    Simulator,
+)
+
+st.set_page_config(page_title="Rent vs Buy Dashboard", layout="wide")
+st.title("🏠 Rent vs Buy — Interactive Dashboard")
+
+st.markdown(
+    """
+    Tune the inputs on the left. The app uses your **`main.py`** engine under the hood.
+    - The charts and summary update live.
+    - The model includes: mortgage amortization, VvE, maintenance (as % of value), property tax, transaction costs, appreciation, rent growth, and opportunity cost of capital.
+    """
+)
+
+# -----------------------------
+# SIDEBAR INPUTS
+# -----------------------------
+with st.sidebar:
+    st.header("Inputs")
+
+    st.subheader("Global")
+    horizon_years = st.slider("Horizon (years)", 1, 30, 7)
+    discount_rate = st.number_input("Discount rate (annual)", value=0.03, min_value=0.0, max_value=0.25, step=0.005, format="%.3f")
+
+    st.subheader("Buy")
+    price = st.number_input("House price", value=500_000, min_value=50_000, step=10_000)
+    down_payment_pct = st.slider("Down payment (%)", 0, 60, 20) / 100.0
+    mortgage_rate = st.number_input("Mortgage rate (annual)", value=0.0361, min_value=0.0, max_value=1.0, step=0.001, format="%.4f")
+    term_years = st.slider("Mortgage term (years)", 5, 40, 30)
+    vve_monthly = st.number_input("VvE (HOA) per month", value=200, min_value=0, step=25)
+    maint_pct = st.number_input("Maintenance (%% of value / year)", value=0.005, min_value=0.0, max_value=0.05, step=0.001, format="%.3f")
+    property_tax_annual = st.number_input("Property tax (annual)", value=600, min_value=0, step=50)
+
+    transfer_tax_pct = st.number_input("Transfer tax (%)", value=0.02, min_value=0.0, max_value=0.10, step=0.005, format="%.3f")
+    buyer_closing_costs_pct = st.number_input("Buyer closing costs (%)", value=0.02, min_value=0.0, max_value=0.08, step=0.005, format="%.3f")
+    seller_costs_pct = st.number_input("Seller costs (%)", value=0.015, min_value=0.0, max_value=0.05, step=0.005, format="%.3f")
+
+    appreciation = st.number_input("Annual appreciation", value=0.02, min_value=-0.1, max_value=0.20, step=0.005, format="%.3f")
+
+    st.subheader("Rent")
+    monthly_rent = st.number_input("Monthly rent (start)", value=2000, min_value=0, step=50)
+    rent_growth = st.number_input("Annual rent increase", value=0.02, min_value=0.0, max_value=0.20, step=0.005, format="%.3f")
+    invest_return = st.number_input("Annual investment return (opportunity)", value=0.03, min_value=0.0, max_value=0.25, step=0.005, format="%.3f")
+
+# Assemble assumption objects
+buy = BuyAssumptions(
+    price=price,
+    down_payment_pct=down_payment_pct,
+    mortgage_rate=mortgage_rate,
+    mortgage_term_years=term_years,
+    vve_monthly=vve_monthly,
+    maintenance_pct_per_year=maint_pct,
+    property_tax_annual=property_tax_annual,
+    transfer_tax_pct=transfer_tax_pct,
+    buyer_closing_costs_pct=buyer_closing_costs_pct,
+    seller_costs_pct=seller_costs_pct,
+    annual_appreciation=appreciation,
+)
+
+rent = RentAssumptions(
+    monthly_rent=monthly_rent,
+    annual_rent_increase=rent_growth,
+    renter_insurance_annual=0.0,
+    annual_investment_return=invest_return,
+)
+
+global_ = GlobalAssumptions(
+    horizon_years=horizon_years,
+    discount_rate_annual=discount_rate,
+)
+
+sim = Simulator(buy, rent, global_)
+
+# Run once for summary
+buy_res = sim.simulate_buy()
+rent_res = sim.simulate_rent()
+
+# Helper formatters
+fmt_money = lambda x: f"€{x:,.0f}".replace(",", "_").replace("_", ",")
+fmt_pct = lambda x: f"{x*100:.2f}%"
+
+# =============================
+# TOP SUMMARY CARDS
+# =============================
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("NPV (Buy)", fmt_money(buy_res.npv))
+col2.metric("NPV (Rent)", fmt_money(rent_res.npv))
+delta = buy_res.npv - rent_res.npv
+col3.metric("NPV Δ (Buy − Rent)", fmt_money(delta), delta=None)
+col4.metric("Equity at Sale (Buy)", fmt_money(buy_res.net_equity_at_sale))
+
+st.divider()
+
+# =============================
+# TEXT SUMMARY
+# =============================
+with st.expander("Detailed summary (same as CLI report)", expanded=True):
+    st.code(sim.render_report())
+
+st.divider()
+
+# =============================
+# PLOTS
+# =============================
+
+# 1) Cumulative cashflows over time (monthly)
+months = global_.horizon_years * 12
+
+buy_cum = np.cumsum(buy_res.cashflows)
+rent_cum = np.cumsum(rent_res.cashflows)
+
+# X spans from 0 (upfront) to M months (inclusive), so length = months+1
+x_buy = np.arange(len(buy_cum))
+x_rent = np.arange(len(rent_cum))
+
+fig1, ax1 = plt.subplots(figsize=(6, 4))
+ax1.plot(x_buy, buy_cum, label="Buy — cumulative cashflow", linewidth=2)
+ax1.plot(x_rent, rent_cum, label="Rent — cumulative cashflow", linewidth=2)
+ax1.axhline(0, linewidth=1, color="black")
+ax1.set_xlabel("Month (0 = upfront)")
+ax1.set_ylabel("Cumulative cashflow (€)")
+ax1.legend()
+st.pyplot(fig1, use_container_width=False)
+st.caption("Cumulative cashflows show the total outlay over time. Higher line = more money spent. Positive slope = cash outflows; jumps upward at the end = sale proceeds or investment payout.")
+
+# 2) NPV vs horizon sweep
+st.subheader("NPV vs Horizon sweep")
+st.caption("Compares the net present value of buying vs renting at different horizons. If the Buy line is above the Rent line, buying is financially better at that horizon.")
+max_h = st.slider("Max horizon for sweep (years)", 3, 40, max(10, horizon_years))
+hs = list(range(1, max_h + 1))
+buy_npvs, rent_npvs = [], []
+for h in hs:
+    s2 = Simulator(buy, rent, GlobalAssumptions(horizon_years=h, discount_rate_annual=discount_rate))
+    br = s2.simulate_buy()
+    rr = s2.simulate_rent()
+    buy_npvs.append(br.npv)
+    rent_npvs.append(rr.npv)
+
+fig2, ax2 = plt.subplots(figsize=(6, 4))
+ax2.plot(hs, buy_npvs, label="Buy NPV", linewidth=2)
+ax2.plot(hs, rent_npvs, label="Rent NPV", linewidth=2)
+ax2.set_xlabel("Horizon (years)")
+ax2.set_ylabel("NPV (€)")
+ax2.legend()
+st.pyplot(fig2, use_container_width=False)
+
+# 3) Parameter sweep: Down payment vs horizon (NPV delta)
+st.subheader("Heatmap: Down payment vs Horizon (NPV Buy − Rent)")
+min_dp, max_dp = 0.0, 0.6
+steps_dp = st.slider("Down payment grid steps", 3, 13, 7)
+steps_h  = st.slider("Horizon grid steps", 3, 13, 7)
+
+# Build grid
+DP = np.linspace(min_dp, max_dp, steps_dp)
+H  = np.linspace(1, max_h, steps_h, dtype=int)
+Z  = np.zeros((len(H), len(DP)))
+for i, h in enumerate(H):
+    for j, dp in enumerate(DP):
+        b2 = BuyAssumptions(
+            price=price,
+            down_payment_pct=float(dp),
+            mortgage_rate=mortgage_rate,
+            mortgage_term_years=term_years,
+            vve_monthly=vve_monthly,
+            maintenance_pct_per_year=maint_pct,
+            property_tax_annual=property_tax_annual,
+            transfer_tax_pct=transfer_tax_pct,
+            buyer_closing_costs_pct=buyer_closing_costs_pct,
+            seller_costs_pct=seller_costs_pct,
+            annual_appreciation=appreciation,
+        )
+        s3 = Simulator(b2, rent, GlobalAssumptions(horizon_years=int(h), discount_rate_annual=discount_rate))
+        br = s3.simulate_buy()
+        rr = s3.simulate_rent()
+        Z[i, j] = br.npv - rr.npv
+
+fig3, ax3 = plt.subplots(figsize=(6, 4))
+# Symmetric color scale around 0 so colors map consistently (blue = negative, red = positive)
+vmax = float(np.max(np.abs(Z))) if np.max(np.abs(Z)) > 0 else 1.0
+c = ax3.imshow(
+    Z,
+    aspect='auto',
+    origin='lower',
+    extent=[DP[0]*100, DP[-1]*100, H[0], H[-1]],
+    cmap="coolwarm",
+    vmin=-vmax,
+    vmax=vmax,
+)
+# Break-even contour where NPV Δ = 0
+X = np.linspace(DP[0]*100, DP[-1]*100, len(DP))
+Y = np.linspace(H[0], H[-1], len(H))
+ax3.contour(X, Y, Z, levels=[0], colors='black', linewidths=1)
+fig3.colorbar(c, ax=ax3, label="NPV Δ (Buy − Rent) €")
+ax3.set_xlabel("Down payment (%)")
+ax3.set_ylabel("Horizon (years)")
+st.pyplot(fig3, use_container_width=False)
+st.caption("Heatmap shows how the relative advantage (Buy − Rent) changes with different down payment percentages and horizons. **Red = Buy better**, **Blue = Rent better**. The black line marks the break‑even (NPV Δ = 0).")
+
+st.caption("Tip: Use the sidebar to change appreciation, rent growth, fees, and rates; then scan the sweep plots to see where the verdict flips.")
