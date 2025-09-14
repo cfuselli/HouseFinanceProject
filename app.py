@@ -110,7 +110,9 @@ col4.metric("Equity at Sale (Buy)", fmt_money(buy_res.net_equity_at_sale))
 
 verdict = "BUY" if delta > 0 else ("RENT" if delta < 0 else "TIE")
 summary_placeholder.info(
-    f"**Summary:** At your inputs, NPV(Buy) = {fmt_money(buy_res.npv)}, NPV(Rent) = {fmt_money(rent_res.npv)} → **{verdict}** by {fmt_money(abs(delta))} (NPV)."
+    f"**Summary:** At your inputs, NPV(Buy) = {fmt_money(buy_res.npv)},"
+    f"NPV(Rent) = {fmt_money(rent_res.npv)}\n"
+    f"It is more convenient to **{verdict}** by {fmt_money(abs(delta))} (NPV)."
 )
 
 st.divider()
