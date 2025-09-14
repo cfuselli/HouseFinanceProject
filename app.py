@@ -149,6 +149,20 @@ summary_placeholder.info(
     f"It is more convenient to **{verdict}** by {fmt_money(abs(delta))} (NPV)."
 )
 
+# -----------------------------
+# CASH OUT (undiscounted) METRICS
+# -----------------------------
+cash_buy = buy_res.total_cash_out            # already net of sale proceeds
+cash_rent = rent_res.total_rent_paid         # sum of rent over horizon (investment handled separately)
+cash_delta = cash_buy - cash_rent
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Total cash out (Buy)", fmt_money(-cash_buy))
+c2.metric("Total cash out (Rent)", fmt_money(-cash_rent))
+c3.metric("Cash out Δ (Buy − Rent)", fmt_money(-(cash_delta)))
+
+st.caption("Total cash out is *undiscounted* net spending (negative = outflow). Buy is net of sale proceeds; Rent is rent paid. NPV differs because it discounts timing and includes all inflows/outflows in today-euros.")
+
 col1, col2, col3 = st.columns(3)
 col1.metric("NPV (Buy)", fmt_money(buy_res.npv))
 col2.metric("NPV (Rent)", fmt_money(rent_res.npv))
